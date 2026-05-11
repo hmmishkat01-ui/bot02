@@ -16,7 +16,6 @@ def home():
     return "Bot is alive and running!"
 
 def run():
-    # Render-এর জন্য পোর্ট ৮৫০১ বা ৮ত৮ত সেট করা ভালো
     app.run(host='0.0.0.0', port=8080)
 
 def keep_alive():
@@ -36,24 +35,28 @@ DISCOUNT_AMOUNT = int(os.getenv('DISCOUNT_AMOUNT', 500))
 
 bot = telebot.TeleBot(TOKEN)
 
-# ৩. গুগল শিট কানেকশন
+# ৩. গুগল শিট কানেকশন (গ্লোবাল ভেরিয়েবল হিসেবে)
 sheet = None 
 
-try:
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
-    client = gspread.authorize(creds)
-    # নিশ্চিত হোন আপনার শিটের নাম "Course_Admission" আছে কি না
-    sheet = client.open("Course_Admission").sheet1
-    print("✅ Google Sheet Connected!")
-except Exception as e:
-    print(f"❌ Sheet Error: {e}")
+def connect_sheet():
+    global sheet
+    try:
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+        client = gspread.authorize(creds)
+        # আপনার শিটের নাম এখানে হুবহু লিখুন
+        sheet = client.open("Course_Admission").sheet1
+        print("✅ Google Sheet Connected!")
+    except Exception as e:
+        print(f"❌ Sheet Error: {e}")
+
+connect_sheet() # বটের শুরুতে শিট কানেক্ট করা
 
 user_state = {}
 
 # ৪. ভর্তি সম্পন্ন করার ফাংশন
 def finalize_admission(message, student_id):
-    global sheet # এটি অত্যন্ত জরুরি
+    global sheet # এটি অত্যন্ত জরুরি যাতে ফাংশন শিটকে চিনতে পারে
     try:
         if ',' not in message.text:
             bot.send_message(ADMIN_ID, "⚠️ ভুল ফরম্যাট! দয়া করে Roll,Reg এভাবে দিন। (যেমন: 101,5005)")
@@ -70,18 +73,35 @@ def finalize_admission(message, student_id):
 
         approve_time = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
         
-        # গুগল শিটে ডেটা জমা
+        # গুগল শিটে ডেটা জমা দেওয়ার সময় চেক করা
         if sheet:
             sheet.append_row([
-                data['admit_time'], student_id, data['name'], data['phone'], 
-                data['coupon'], data['paid_amount'], data['sender_num'], 
-                roll.strip(), reg.strip(), data['photo_id'], "Approved", approve_time
+                data['admit_time'], 
+                student_id, 
+                data['name'], 
+                data['phone'], 
+                data['coupon'], 
+                data['paid_amount'], 
+                data['sender_num'], 
+                roll.strip(), 
+                reg.strip(), 
+                data['photo_id'], 
+                "Approved", 
+                approve_time
             ])
+        else:
+            # যদি কোনো কারণে শিট ডিসকানেক্ট হয়ে যায়, আবার কানেক্ট করার চেষ্টা করবে
+            connect_sheet()
+            if sheet:
+                sheet.append_row([data['admit_time'], student_id, data['name'], data['phone'], data['coupon'], data['paid_amount'], data['sender_num'], roll.strip(), reg.strip(), data['photo_id'], "Approved", approve_time])
+            else:
+                bot.send_message(ADMIN_ID, "❌ গুগল শিট কানেকশন নেই! ডেটা সেভ করা যায়নি।")
+                return
         
         # স্টুডেন্টের জন্য অভিনন্দন মেসেজ
         success_msg = (
             "🎊 *অভিনন্দন! আপনার ভর্তি সফল হয়েছে* 🎊\n\n"
-            "আপনার পেমেন্ট ভেরিফাই করা হয়েছে। আপনার তথ্যসমূহ নিচে দেওয়া হলো:\n\n"
+            "আপনার তথ্যসমূহ নিচে দেওয়া হলো:\n\n"
             f"🔢 *রোল নাম্বার:* `{roll.strip()}`\n"
             f"🆔 *রেজিস্ট্রেশন:* `{reg.strip()}`\n\n"
             "নিচের বাটনে ক্লিক করে দ্রুত আমাদের সিক্রেট গ্রুপে যুক্ত হয়ে যান। 👇"
@@ -94,7 +114,7 @@ def finalize_admission(message, student_id):
         bot.send_message(ADMIN_ID, f"✅ {data['name']} এর ভর্তি সম্পন্ন হয়েছে।")
         
     except Exception as e:
-        bot.send_message(ADMIN_ID, f"❌ সমস্যা হয়েছে: {e}")
+        bot.send_message(ADMIN_ID, f"❌ এপ্রুভাল এরর: {e}")
 
 # --- ইউজার হ্যান্ডেলারস ---
 
@@ -113,7 +133,7 @@ def get_name(message):
     user_state[message.chat.id]['step'] = 'COUPON'
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     markup.add("কুপন নেই")
-    bot.send_message(message.chat.id, "🎟 আপনার কি কোনো *কুপন কোড* আছে? থাকলে লিখুন, না থাকলে নিচের বাটনে ক্লিক করুন:", reply_markup=markup)
+    bot.send_message(message.chat.id, "🎟 কুপন কোড থাকলে লিখুন (না থাকলে 'কুপন নেই' বাটনে ক্লিক করুন):", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: user_state.get(m.chat.id, {}).get('step') == 'COUPON')
 def get_coupon(message):
@@ -135,7 +155,7 @@ def get_phone(message):
     msg = (
         f"💰 আপনার কোর্স ফি: `{fee}` টাকা।\n"
         f"বিকাশ (Personal): `{BIKASH_NO}`\n\n"
-        "টাকা পাঠানোর পর পেমেন্টের একটি *স্ক্রিনশট* দিন।"
+        "পেমেন্টের একটি *স্ক্রিনশট* দিন।"
     )
     bot.send_message(message.chat.id, msg, parse_mode='Markdown')
 
@@ -143,21 +163,21 @@ def get_phone(message):
 def get_photo(message):
     user_state[message.chat.id]['photo_id'] = message.photo[-1].file_id
     user_state[message.chat.id]['step'] = 'PAY_INFO'
-    bot.send_message(message.chat.id, "💵 আপনি কত টাকা পাঠিয়েছেন এবং কোন নাম্বার থেকে পাঠিয়েছেন তা লিখে দিন।\n\nউদাহরণ: *2500, 017XXXXXXXX*", parse_mode='Markdown')
+    bot.send_message(message.chat.id, "💵 পেমেন্ট কত এবং কোন নাম্বার থেকে পাঠিয়েছেন তা লিখুন।\n\nউদাহরণ: *2500, 017XXXXXXXX*", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: user_state.get(m.chat.id, {}).get('step') == 'PAY_INFO')
 def get_pay_info(message):
     cid = message.chat.id
     try:
         if ',' not in message.text:
-             raise Exception("Wrong format")
+            raise Exception("Invalid format")
         amount, sender = message.text.split(',')
         user_state[cid].update({
             'paid_amount': amount.strip(),
             'sender_num': sender.strip(),
             'admit_time': datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
         })
-        bot.send_message(cid, "⏳ ধন্যবাদ! আপনার তথ্যগুলো জমা হয়েছে। এডমিন চেক করে এপ্রুভ করলে আপনি কনফার্মেশন পাবেন।")
+        bot.send_message(cid, "⏳ ধন্যবাদ! আপনার তথ্য জমা হয়েছে। এডমিন এপ্রুভ করলে কনফার্মেশন পাবেন।")
         
         data = user_state[cid]
         admin_txt = (
@@ -183,10 +203,8 @@ def admin_action(call):
 
 # ৫. মেইন লুপ ও সার্ভার রান
 if __name__ == "__main__":
-    keep_alive() # সার্ভারকে সজাগ রাখবে
-    print("----------------------------------------")
-    print("🚀 Sky IT Institute Bot is LIVE!")
-    print("----------------------------------------")
+    keep_alive() # রেন্ডার-এ লাইভ রাখার জন্য
+    print("🚀 Bot is LIVE!")
     try:
         bot.send_message(ADMIN_ID, "✅ Bot Started Successfully!")
     except:
