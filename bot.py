@@ -172,7 +172,7 @@ def admin_action(call):
 
 if __name__ == "__main__":
     print("----------------------------------------")
-    print("🚀 SkillVant IT Academy Bot is LIVE!")
+    print("🚀 Sky IT Institute Bot is LIVE!")
     print("----------------------------------------")
     try: bot.send_message(ADMIN_ID, "✅ Bot Started Successfully!")
     except: pass
