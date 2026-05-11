@@ -36,6 +36,9 @@ DISCOUNT_AMOUNT = int(os.getenv('DISCOUNT_AMOUNT', 500))
 bot = telebot.TeleBot(TOKEN)
 
 # গুগল শিট কানেকশন
+# গুগল শিট কানেকশন
+sheet = None  # শুরুতে খালি ডিফাইন করে রাখা ভালো
+
 try:
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
